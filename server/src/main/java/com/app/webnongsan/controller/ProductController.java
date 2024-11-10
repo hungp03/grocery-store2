@@ -12,6 +12,7 @@ import com.turkraft.springfilter.boot.Filter;
 import jakarta.validation.Valid;
 import lombok.AllArgsConstructor;
 import org.checkerframework.checker.units.qual.A;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.repository.query.Param;
@@ -23,11 +24,18 @@ import java.util.List;
 
 @RestController
 @RequestMapping("api/v2")
-@AllArgsConstructor
 public class ProductController {
     private final ProductService productService;
-    private final String FASTAPI_URL_SIMILAR_ID = "http://127.0.0.1:8000/similar/%d";
-    private final String FASTAPI_URL_RECOMMEND_ID = "http://localhost:8000/recommend/%d";
+    @Value("${fastapi.similar-id-url}")
+    private String similarIdUrl;
+
+    @Value("${fastapi.recommend-id-url}")
+    private String recommendIdUrl;
+
+    public ProductController(ProductService productService) {
+        this.productService = productService;
+    }
+
     @PostMapping("products")
     @ApiMessage("Create product")
     public ResponseEntity<Product> create(@Valid @RequestBody Product p) throws ResourceInvalidException {
@@ -104,7 +112,7 @@ public class ProductController {
     @GetMapping("products/similar/{productId}")
     @ApiMessage("Get similar product with productId")
     public ResponseEntity<List<SearchProductDTO>> getSimilarProducts(@PathVariable Long productId) {
-        return ResponseEntity.ok(productService.getSimilarProducts(productId, FASTAPI_URL_SIMILAR_ID));
+        return ResponseEntity.ok(productService.getSimilarProducts(String.format(similarIdUrl, productId )));
     }
 
     @GetMapping("search-recommended/{word}")
@@ -120,6 +128,6 @@ public class ProductController {
     @ApiMessage("Recommend product")
     public ResponseEntity<List<SearchProductDTO>> getSimilarProducts() {
         Long uid = SecurityUtil.getUserId();
-        return ResponseEntity.ok(productService.getSimilarProducts(uid, FASTAPI_URL_RECOMMEND_ID));
+        return ResponseEntity.ok(productService.getSimilarProducts(String.format(recommendIdUrl, uid)));
     }
 }

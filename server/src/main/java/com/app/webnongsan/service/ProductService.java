@@ -12,31 +12,40 @@ import com.app.webnongsan.util.exception.ResourceInvalidException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.*;
 import lombok.AllArgsConstructor;
-import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.IOException;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+
 @Service
-@AllArgsConstructor
 public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final EntityManager entityManager;
     private final RestTemplate restTemplate;
-    private final String FASTAPI_URL_SEARCH_RECOMMENDED = "http://127.0.0.1:8000/search/%s";
+
+    @Value("${fastapi.search-product-url}")
+    private String FASTAPI_URL_SEARCH_RECOMMENDED;
+
     private final int PRODUCT_RECOMMEND_COUNT = 20;
     private final PaginationHelper paginationHelper;
+
+    public ProductService(ProductRepository productRepository, CategoryRepository categoryRepository, EntityManager entityManager, RestTemplate restTemplate, PaginationHelper paginationHelper) {
+        this.productRepository = productRepository;
+        this.categoryRepository = categoryRepository;
+        this.entityManager = entityManager;
+        this.restTemplate = restTemplate;
+        this.paginationHelper = paginationHelper;
+    }
 
     public boolean checkValidCategoryId(long categoryId) {
         return this.categoryRepository.existsById(categoryId);
@@ -154,9 +163,8 @@ public class ProductService {
         return new PageImpl<>(resultList, pageable, totalCount);
     }
 
-    public List<Long> fetchSimilarIds(Long id, String apiUrl) {
-        String url = String.format(apiUrl, id);
-        Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+    public List<Long> fetchSimilarIds(String apiUrl) {
+        Map<String, Object> response = restTemplate.getForObject(apiUrl, Map.class);
 
         return Optional.ofNullable((List<Integer>) response.get("data"))
                 .orElse(Collections.emptyList())
@@ -165,9 +173,9 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
-    public List<SearchProductDTO> getSimilarProducts(Long id, String apiUrl) {
+    public List<SearchProductDTO> getSimilarProducts(String apiUrl) {
         // Lấy danh sách các ID sản phẩm tương tự
-        List<Long> ids = fetchSimilarIds(id, apiUrl);
+        List<Long> ids = fetchSimilarIds(apiUrl);
         if (ids.isEmpty()) {
             return Collections.emptyList();
         }

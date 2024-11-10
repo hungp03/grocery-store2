@@ -171,6 +171,7 @@ class RecommendationService:
                 .join(Category, Product.category_id == Category.id)
                 .all()
             )
+            print(f"Found {len(results)} results in the query.")
             products_data = [{
                 'id': product.id,
                 'product_name': product.product_name,
@@ -182,7 +183,6 @@ class RecommendationService:
             } for product, category in results]
         finally:
             session.close()
-        
         return pd.DataFrame(products_data)
 
     @property
@@ -203,12 +203,19 @@ class RecommendationService:
     @lru_cache(maxsize=1)
     def _get_user_behavior_from_db(self):
         query = "CALL GetUserBehavior();"
-
-        with self.engine.connect() as conn:
-            result = conn.execute(text(query))
-            return pd.DataFrame(result.fetchall(), columns=result.keys())
         
-    def compute_product_embeddings(self, products_df):
+        # Sử dụng cursor để thực hiện truy vấn
+        with self.engine.connect() as conn:
+            cursor = conn.connection.cursor()
+            cursor.execute(query)
+            result = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
+            cursor.close()
+
+        return pd.DataFrame(result, columns=columns)
+
+        
+    def _compute_product_embeddings(self, products_df):
         products_df['combined_features'] = (
             products_df['product_name'] + " " +
             products_df['category'] + " " +
@@ -358,4 +365,4 @@ class RecommendationService:
         if not similar_product_ids:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm tương tự")
 
-        return similar_product_ids
+        return similar_product_ids[:n]
