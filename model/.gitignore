@@ -1,0 +1,6 @@
+**/venv
+**/__pycache__
+.env
+recommedation_test.txt
+sentence_transformer_model.pkl
+.vscode/
