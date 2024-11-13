@@ -237,8 +237,17 @@ class RecommendationService:
             return cached_vectors, cached_matrix
 
         user_data_df = self.user_data
-        user_data_df['feedback_vector'] = user_data_df['feedback_description'].apply(
+        # Tính toán vector phản hồi hợp lệ
+        valid_feedback_vectors = user_data_df['feedback_description'].apply(
             lambda x: self.model.encode(x) if x and x.strip() != '' else None
+        ).dropna()  # Loại bỏ các giá trị None
+        
+        # Tính toán vector đặc trưng bằng cách tính trung bình của tất cả các vector hợp lệ
+        feature_vector = np.mean(np.stack(valid_feedback_vectors), axis=0) if len(valid_feedback_vectors) > 0 else np.zeros(self.model.get_sentence_embedding_dimension())
+        
+        # Thay thế None bằng vector đặc trưng
+        user_data_df['feedback_vector'] = user_data_df['feedback_description'].apply(
+            lambda x: self.model.encode(x) if x and x.strip() != '' else feature_vector
         )
 
         feedback_vectors = (
@@ -254,17 +263,11 @@ class RecommendationService:
             fill_value=0
         )
         behavior_vectors = StandardScaler().fit_transform(behavior_matrix)
-
-        feedback_vectors = feedback_vectors.reindex(
-            behavior_matrix.index, 
-            fill_value=np.zeros(self.model.get_sentence_embedding_dimension())
-        )
-        
         user_vectors = np.hstack((behavior_vectors, np.stack(feedback_vectors)))
         
         cache_data("user_vectors", user_vectors)
         cache_data("behavior_matrix", behavior_matrix)
-        
+        print(user_vectors)
         return user_vectors, behavior_matrix
 
     @property
@@ -285,6 +288,7 @@ class RecommendationService:
     def find_similar_products(self, input_text, n=10):
         input_embeddings = self.model.encode(input_text, convert_to_tensor=False)
         similarities = cosine_similarity([input_embeddings], self.product_embeddings)[0]
+        print("Similarities: ", similarities)
         top_n_indices = np.argsort(similarities)[::-1][:n]
         similar_product_ids = self.products_df.iloc[top_n_indices]['id'].tolist()
         return similar_product_ids
