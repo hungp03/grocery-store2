@@ -290,12 +290,22 @@ class RecommendationService:
         index.build(10)
         return index
 
-    def find_similar_products(self, input_text, n=10):
-        input_embeddings = self.model.encode(input_text, convert_to_tensor=False)
-        similarities = cosine_similarity([input_embeddings], self.product_embeddings)[0]
+    def find_similar_products(self, input_data, n=10, input_type="text"):
+        if input_type == "text":
+            # Encode text thành embedding
+            input_embedding = self.model.encode(input_data, convert_to_tensor=False)
+        elif input_type == "embedding":
+            if not isinstance(input_data, np.ndarray):
+                raise ValueError("require np.ndarray for embedding data")
+            input_embedding = input_data
+        else:
+            raise ValueError("input_type must be 'text' or 'embedding'.")
+
+        similarities = cosine_similarity([input_embedding], self.product_embeddings)[0]
         top_n_indices = np.argsort(-similarities)[:n]
         similar_product_ids = self.products_df.iloc[top_n_indices]['id'].tolist()
         return similar_product_ids
+
 
     def recommend_products_for_new_user(self, top_n=18):
         # Đề xuất các sản phẩm phổ biến hoặc sản phẩm bán chạy nhất
@@ -345,7 +355,7 @@ class RecommendationService:
 
 
     def search_similar_products_by_keyword(self, keyword, page=1, pagesize=10, n=20):
-        similar_product_ids = self.find_similar_products(keyword, n)
+        similar_product_ids = self.find_similar_products(keyword, n, input_type="text")
 
         if not similar_product_ids:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm tương tự")
@@ -355,19 +365,45 @@ class RecommendationService:
 
         return similar_product_ids[start_index:end_index]
 
+    def _get_product_embedding_by_id(self, product_id):
+        """
+        Lấy embedding của một sản phẩm dựa trên ID.
+        Nếu embedding đã được cache, lấy từ cache. Nếu không, truy vấn cơ sở dữ liệu.
+        Args:
+            product_id (int): ID của sản phẩm.
+
+        Returns:
+            np.ndarray: Embedding của sản phẩm dưới dạng mảng NumPy, hoặc None nếu không tìm thấy.
+        """
+        # Kiểm tra trong cache
+        embeddings = get_cached_data('product_embeddings')
+        if embeddings is not None:
+            # Lấy danh sách ID sản phẩm đã cache (nếu có)
+            products_df = get_cached_data('products')
+            if products_df is not None:
+                product_index = products_df.index[products_df['id'] == product_id].tolist()
+                if product_index:
+                    return embeddings[product_index[0]]
+
+        # truy vấn từ db nếu không có cache
+        session = self.Session()
+        try:
+            result = session.query(Product).filter(Product.id == product_id).first()
+            if result and result.embedding:
+                embedding = np.frombuffer(result.embedding, dtype=np.float32)
+                return embedding
+        finally:
+            session.close()
+
+        return None
+
+
     def get_similar_products_by_id(self, product_id: int, n=12):
-        product_row = self.products_df[self.products_df['id'] == product_id]
+        product_embedding = self._get_product_embedding_by_id(product_id)
+        if product_embedding is None:
+            raise HTTPException(status_code=404, detail="Embedding cho sản phẩm không tồn tại")
 
-        if product_row.empty:
-            raise HTTPException(status_code=404, detail="Sản phẩm không tồn tại")
-
-        input_text = (
-            product_row.iloc[0]['product_name'] + " " + 
-            product_row.iloc[0]['category'] + " " + 
-            (product_row.iloc[0]['description'] or '')
-        )
-            
-        similar_product_ids = self.find_similar_products(input_text, n + 1)
+        similar_product_ids = self.find_similar_products(product_embedding, n + 1, input_type="embedding")
         similar_product_ids = [id_ for id_ in similar_product_ids if id_ != product_id]
 
         if not similar_product_ids:
