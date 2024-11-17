@@ -19,7 +19,7 @@ from sentence_transformers import SentenceTransformer
 from annoy import AnnoyIndex
 
 # Local imports
-from entities.base import Product, Category, ProductEmbedding
+from entities.base import Product, Category
 from utils.redis_utils import get_cached_data, cache_data, delete_key
 
 load_dotenv()
@@ -106,14 +106,14 @@ class RecommendationService:
 
     @property
     def products_df(self):
-        if self._products_df is None:
-            self._products_df = self._load_products_data()
+        if self._products_df is None or self._product_embeddings is None:
+            self._products_df, self._product_embeddings = self._load_products_data()
         return self._products_df
 
     @property
     def product_embeddings(self):
-        if self._product_embeddings is None:
-            self._product_embeddings = self._load_embeddings()
+        if self._product_embeddings is None or self._products_df is None:
+            self._products_df, self._product_embeddings = self._load_products_data()
         return self._product_embeddings
 
     def _load_model(self):
@@ -126,57 +126,49 @@ class RecommendationService:
 
     def _load_products_data(self):
         products_df = get_cached_data('products')
-        if products_df is not None:
-            return products_df
+        embeddings = get_cached_data('product_embeddings')
+        if products_df is not None and embeddings is not None:
+            return products_df, embeddings
             
-        products_df = self._get_products_from_db()
+        products_df, embeddings = self._get_products_from_db()
             
         cache_data('products', products_df)
-        return products_df
-    
-    def _load_embeddings(self):
-        embeddings = get_cached_data('product_embeddings')
-        if embeddings is not None:
-            return embeddings
-        # truy vấn dữ liệu embeddings từ cơ sở dữ liệu nếu không có cache
-        session = self.Session()
-        try:
-            embeddings = (
-                session.query(ProductEmbedding)
-                .all()
-            )
-            
-            embeddings = np.array([np.frombuffer(embedding.embedding, dtype=np.float32) for embedding in embeddings])
-            
-        finally:
-            session.close()
-
         cache_data('product_embeddings', embeddings)
-        
-        return embeddings
-
+        return products_df, embeddings
+    
     @lru_cache(maxsize=1)
     def _get_products_from_db(self):
         session = self.Session()
         try:
-            results = (
-                session.query(Product, Category)
-                .join(Category, Product.category_id == Category.id)
-                .all()
-            )
-            #print(f"Found {len(results)} results in the query.")
-            products_data = [{
-                'id': product.id,
-                'product_name': product.product_name,
-                'price': product.price,
-                'sold': product.sold,
-                'rating': product.rating,
-                'category': category.name,
-                'description': product.description
-            } for product, category in results]
+            results = session.query(Product, Category)\
+                            .join(Category, Product.category_id == Category.id)\
+                            .all()
+
+            products_data = []
+            embeddings = []
+
+            for product, category in results:
+                # Lưu thông tin sản phẩm (không bao gồm embedding)
+                products_data.append({
+                    'id': product.id,
+                    'product_name': product.product_name,
+                    'price': product.price,
+                    'sold': product.sold,
+                    'rating': product.rating,
+                    'category': category.name,
+                    'description': product.description
+                })
+
+                # Lưu embedding
+                if product.embedding: 
+                    embeddings.append(np.frombuffer(product.embedding, dtype=np.float32))
+
+            products_df = pd.DataFrame(products_data)
+            embeddings = np.array(embeddings)
+
         finally:
             session.close()
-        return pd.DataFrame(products_data)
+        return products_df, embeddings
 
     @property
     def user_data(self):
@@ -216,35 +208,24 @@ class RecommendationService:
                 .filter(Product.id == product_id)
                 .first()
             )
-            
+
             if not product:
                 raise ValueError(f"Sản phẩm với ID {product_id} không tồn tại.")
-            
+
             product_text = f"{product.product_name} {product.category.name} {product.description or ''}"
             new_embedding = self.model.encode(product_text, convert_to_tensor=False)
-            product_embedding = (
-                session.query(ProductEmbedding)
-                .filter(ProductEmbedding.product_id == product_id)
-                .first()
-            )
-            if product_embedding:
-                product_embedding.embedding = np.asarray(new_embedding, dtype=np.float32).tobytes()
-            else:
-                new_embedding_record = ProductEmbedding(
-                    product_id=product_id,
-                    embedding=np.asarray(new_embedding, dtype=np.float32).tobytes()
-                )
-                session.add(new_embedding_record)
-            
+
+            # Cập nhật embedding
+            product.embedding = np.asarray(new_embedding, dtype=np.float32).tobytes()
             session.commit()
             print(f"Đã cập nhật embedding cho sản phẩm ID {product_id}.")
-        
         except Exception as e:
             session.rollback()
             print(f"Lỗi khi cập nhật embedding cho sản phẩm ID {product_id}: {e}")
             raise
         finally:
             session.close()
+
 
 
     def get_user_vectors(self):
@@ -312,8 +293,7 @@ class RecommendationService:
     def find_similar_products(self, input_text, n=10):
         input_embeddings = self.model.encode(input_text, convert_to_tensor=False)
         similarities = cosine_similarity([input_embeddings], self.product_embeddings)[0]
-        #print("Similarities: ", similarities)
-        top_n_indices = np.argsort(similarities)[::-1][:n]
+        top_n_indices = np.argsort(-similarities)[:n]
         similar_product_ids = self.products_df.iloc[top_n_indices]['id'].tolist()
         return similar_product_ids
 

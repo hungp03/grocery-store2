@@ -21,9 +21,8 @@ class Product(Base):
     image_url = Column(String)
     category_id = Column(Integer, ForeignKey('categories.id'))
     description = Column(String)
-    
+    embedding = Column(LargeBinary)
     category = relationship("Category", back_populates="products")
-    embeddings = relationship("ProductEmbedding", back_populates="product", cascade="all, delete-orphan")
 
 class Category(Base):
     __tablename__ = 'categories'
@@ -32,20 +31,6 @@ class Category(Base):
     name = Column(String)
     
     products = relationship("Product", back_populates="category")
-
-
-class ProductEmbedding(Base):
-    __tablename__ = 'product_embeddings'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    product_id = Column(Integer, ForeignKey('products.id'), nullable=False)
-    embedding = Column(LargeBinary, nullable=False)
-
-    # Quan hệ với bảng Product
-    product = relationship("Product", back_populates="embeddings")
-
-    def __repr__(self):
-        return f"<ProductEmbedding(id={self.id}, product_id={self.product_id})>"
 
 SENTENCE_TRANSFORMER_MODEL_FILE = 'sentence_transformer_model.pkl'
 model = joblib.load(SENTENCE_TRANSFORMER_MODEL_FILE)
@@ -65,7 +50,7 @@ def compute_product_embeddings(products_df):
     return embeddings
 
 def update_product_embeddings():
-   # Hàm cập nhật tất cả embedding của sản phẩm vào cơ sở dữ liệu.
+    # Hàm cập nhật tất cả embedding của sản phẩm vào cơ sở dữ liệu.
     session = Session()
     
     try:
@@ -76,6 +61,7 @@ def update_product_embeddings():
             print("No products found. Exiting...")
             return
         
+        # Chuẩn bị dữ liệu sản phẩm
         products_data = [{
             'id': product.id,
             'product_name': product.product_name,
@@ -88,15 +74,11 @@ def update_product_embeddings():
         embeddings = compute_product_embeddings(products_df)
         print(f"Generated {len(embeddings)} embeddings.")
         
-        # Cập nhật embedding vào cơ sở dữ liệu
         for i, product in enumerate(products):
             embedding = embeddings[i]
             print(f"Updating embedding for product ID: {product.id}")
-            # Lưu embedding dưới dạng bytes
-            product_embedding = ProductEmbedding(product_id=product.id, embedding=embedding.tobytes()) 
-            session.add(product_embedding)
+            product.embedding = embedding.tobytes()
 
-        # Commit các thay đổi vào cơ sở dữ liệu
         session.commit()
         print("Embeddings updated successfully.")
     
@@ -106,6 +88,7 @@ def update_product_embeddings():
     
     finally:
         session.close()
+
 
 if __name__ == "__main__":
     update_product_embeddings()
