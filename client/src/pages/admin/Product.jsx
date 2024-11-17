@@ -93,36 +93,41 @@ const Product = () => {
 
   const handleConfirmDelete = async () => {
     try {
-      await apiDeleteProduct(deleteProduct.id);
-      message.success("Xóa sản phẩm thành công!", 2);
+      const res = await apiDeleteProduct(deleteProduct.id);
+      if (res.statusCode === 200) {
+        message.success("Xóa sản phẩm thành công!", 2);
+      }
+      else {
+        message.success("Xóa sản phẩm thất bại! Có thể sản phẩm đã được mua bởi người dùng", 2);
+      }
       setShowDeleteMessage(false);
-  
+
       const filters = [];
       const searchTerm = params.get("search");
       const categorySearch = params.get("category");
       const sort = params.get("sort");
-  
+
       if (searchTerm && searchTerm !== "null") {
         filters.push(`productName~'${searchTerm}'`);
       }
-  
+
       if (categorySearch && categorySearch !== "null") {
         filters.push(`category.id='${categorySearch}'`);
       }
-  
+
       const queries = {
         page: currentPage,
         size: PRODUCT_PER_PAGE,
         filter: filters,
       };
-  
+
       if (sortOption) {
         const [sortField, sortDirection] = sortOption.split('-');
         queries.sort = `${sortField},${sortDirection}`;
       }
-  
+
       fetchProducts(queries);
-  
+
     } catch (error) {
       message.error("Xóa sản phẩm thất bại!", 2);
     }

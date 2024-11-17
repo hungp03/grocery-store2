@@ -19,14 +19,12 @@ from sentence_transformers import SentenceTransformer
 from annoy import AnnoyIndex
 
 # Local imports
-from entities.base import Product, Category
+from entities.base import Product, Category, ProductEmbedding
 from utils.redis_utils import get_cached_data, cache_data, delete_key
 
 load_dotenv()
 
 DATABASE_URL = os.getenv("DB_URL")
-PRODUCT_EMBEDDINGS_FILE = 'product_embeddings.pkl'
-PRODUCTS_DATA_FILE = 'products_data.csv'
 SENTENCE_TRANSFORMER_MODEL_FILE = 'sentence_transformer_model.pkl'
 
 class RecommendationService:
@@ -44,14 +42,11 @@ class RecommendationService:
             
         self.engine = create_engine(DATABASE_URL)
         self.Session = sessionmaker(bind=self.engine)
-        
         # Khởi tạo scheduler
         self.scheduler = BackgroundScheduler()
         self.scheduler.start()
-
         # Lên lịch các tác vụ làm mới dữ liệu
         self._schedule_data_refresh()
-
         # Lazy loading attributes - chỉ khởi tạo khi cần
         self._model = None
         self._products_df = None
@@ -60,16 +55,14 @@ class RecommendationService:
         self._user_vectors = None
         self._behavior_matrix = None
         self._annoy_index = None
-        
         self._initialized = True
 
     def _schedule_data_refresh(self):
         """Lên lịch các tác vụ làm mới dữ liệu với khoảng thời gian cụ thể."""
-        # Lên lịch refresh dữ liệu sản phẩm và embeddings mỗi ngày
-        self.scheduler.add_job(self.refresh_product_data, 'interval', hours=24, id='refresh_product_data')
+        # Lên lịch refresh dữ liệu sản phẩm và embeddings mỗi 12 tiếng
+        self.scheduler.add_job(self.refresh_product_data, 'interval', hours=12, id='refresh_product_data')
         # Lên lịch refresh hành vi người dùng mỗi 3 tiếng
-        self.scheduler.add_job(self.refresh_user_behavior, 'interval', hours=6, id='refresh_user_behavior')
-
+        self.scheduler.add_job(self.refresh_user_behavior, 'interval', hours=3, id='refresh_user_behavior')
         # Lắng nghe sự kiện thực thi các tác vụ
         self.scheduler.add_listener(self._job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
 
@@ -80,23 +73,20 @@ class RecommendationService:
             print(f"Công việc {event.job_id} hoàn thành thành công")
 
     def refresh_product_data(self):
-        """Làm mới dữ liệu sản phẩm và embeddings của sản phẩm."""
         delete_key('products')
         print(f"Làm mới dữ liệu sản phẩm vào lúc {datetime.datetime.now()}")
-        self._products_df = self._load_products_data()  # Tải lại dữ liệu sản phẩm
-        cache_data('products', self._products_df)  # Lưu lại vào cache
-
+        self._products_df = self._load_products_data()
+        cache_data('products', self._products_df) 
         # Làm mới embeddings của sản phẩm
         delete_key("product_embeddings")
-        self._product_embeddings = self._load_embeddings()  # Tải lại embeddings
-        cache_data('product_embeddings', self._product_embeddings)  # Lưu lại vào cache
+        self._product_embeddings = self._load_embeddings()
+        cache_data('product_embeddings', self._product_embeddings)
 
     def refresh_user_behavior(self):
-        """Làm mới dữ liệu hành vi người dùng và cache lại."""
         delete_key("user_data")
         print(f"Làm mới ma trận hành vi người dùng vào lúc {datetime.datetime.now()}")
-        self._user_data = self._load_user_data()  # Tải lại dữ liệu hành vi người dùng
-        cache_data('user_data', self._user_data)  # Lưu lại vào cache
+        self._user_data = self._load_user_data()
+        cache_data('user_data', self._user_data)
 
         delete_key("user_vectors")
         delete_key("behavior_matrix")
@@ -105,8 +95,8 @@ class RecommendationService:
         self._annoy_index = None
         self._annoy_index = self._build_annoy_index()
         print("Tái cấu trúc cây annoy")
-        cache_data("user_vectors", self._user_vectors)  # Lưu lại user vectors vào cache
-        cache_data("behavior_matrix", self._behavior_matrix)  # Lưu lại ma trận hành vi vào cache
+        cache_data("user_vectors", self._user_vectors)
+        cache_data("behavior_matrix", self._behavior_matrix)
 
     @property
     def model(self):
@@ -139,27 +129,30 @@ class RecommendationService:
         if products_df is not None:
             return products_df
             
-        if os.path.exists(PRODUCTS_DATA_FILE):
-            products_df = pd.read_csv(PRODUCTS_DATA_FILE)
-        else:
-            products_df = self._get_products_from_db()
-            products_df.to_csv(PRODUCTS_DATA_FILE, index=False)
+        products_df = self._get_products_from_db()
             
         cache_data('products', products_df)
         return products_df
-
+    
     def _load_embeddings(self):
         embeddings = get_cached_data('product_embeddings')
         if embeddings is not None:
             return embeddings
+        # truy vấn dữ liệu embeddings từ cơ sở dữ liệu nếu không có cache
+        session = self.Session()
+        try:
+            embeddings = (
+                session.query(ProductEmbedding)
+                .all()
+            )
             
-        if os.path.exists(PRODUCT_EMBEDDINGS_FILE):
-            embeddings = joblib.load(PRODUCT_EMBEDDINGS_FILE)
-        else:
-            embeddings = self._compute_product_embeddings(self.products_df)
-            joblib.dump(embeddings, PRODUCT_EMBEDDINGS_FILE)
+            embeddings = np.array([np.frombuffer(embedding.embedding, dtype=np.float32) for embedding in embeddings])
             
+        finally:
+            session.close()
+
         cache_data('product_embeddings', embeddings)
+        
         return embeddings
 
     @lru_cache(maxsize=1)
@@ -215,13 +208,44 @@ class RecommendationService:
         return pd.DataFrame(result, columns=columns)
 
         
-    def _compute_product_embeddings(self, products_df):
-        products_df['combined_features'] = (
-            products_df['product_name'] + " " +
-            products_df['category'] + " " +
-            products_df['description'].fillna('')
-        )
-        return self.model.encode(products_df['combined_features'].tolist(), convert_to_tensor=False)
+    def update_product_embedding(self, product_id):
+        session = self.Session()
+        try:
+            product = (
+                session.query(Product)
+                .filter(Product.id == product_id)
+                .first()
+            )
+            
+            if not product:
+                raise ValueError(f"Sản phẩm với ID {product_id} không tồn tại.")
+            
+            product_text = f"{product.product_name} {product.category.name} {product.description or ''}"
+            new_embedding = self.model.encode(product_text, convert_to_tensor=False)
+            product_embedding = (
+                session.query(ProductEmbedding)
+                .filter(ProductEmbedding.product_id == product_id)
+                .first()
+            )
+            if product_embedding:
+                product_embedding.embedding = np.asarray(new_embedding, dtype=np.float32).tobytes()
+            else:
+                new_embedding_record = ProductEmbedding(
+                    product_id=product_id,
+                    embedding=np.asarray(new_embedding, dtype=np.float32).tobytes()
+                )
+                session.add(new_embedding_record)
+            
+            session.commit()
+            print(f"Đã cập nhật embedding cho sản phẩm ID {product_id}.")
+        
+        except Exception as e:
+            session.rollback()
+            print(f"Lỗi khi cập nhật embedding cho sản phẩm ID {product_id}: {e}")
+            raise
+        finally:
+            session.close()
+
 
     def get_user_vectors(self):
         if self._user_vectors is None or self._behavior_matrix is None:

@@ -36,6 +36,9 @@ public class ProductService {
     @Value("${fastapi.search-product-url}")
     private String FASTAPI_URL_SEARCH_RECOMMENDED;
 
+    @Value("${fastapi.update-embedding-url}")
+    private String FASTAPI_URL_UPDATE_EMBEDDING;
+
     private final int PRODUCT_RECOMMEND_COUNT = 20;
     private final PaginationHelper paginationHelper;
 
@@ -52,7 +55,9 @@ public class ProductService {
     }
 
     public Product create(Product p) {
-        return this.productRepository.save(p);
+        Product product = this.productRepository.save(p);
+        restTemplate.put(String.format(FASTAPI_URL_UPDATE_EMBEDDING, product.getId()), null);
+        return product;
     }
 
     public boolean checkValidProductId(long id) {
@@ -111,7 +116,9 @@ public class ProductService {
             curr.setUnit(p.getUnit());
         }
         assert curr != null;
-        return this.productRepository.save(curr);
+        Product savedProduct = this.productRepository.save(curr);
+        restTemplate.put(String.format(FASTAPI_URL_UPDATE_EMBEDDING, savedProduct.getId()), null);
+        return savedProduct;
     }
 
     public double getMaxPrice(String category, String productName) throws ResourceInvalidException {

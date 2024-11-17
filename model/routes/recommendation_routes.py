@@ -38,3 +38,13 @@ def recommend(userid: int):
         return JSONResponse(content=response_data)
     except HTTPException as e:
         raise e
+    
+@router.put('/update-product-embedding/{productId}')
+def update_embedding(productId: int):
+    try:
+        product_service.update_product_embedding(productId)
+        return {"status": "success", "message": f"Embedding của sản phẩm ID {productId} đã được cập nhật thành công"}
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi cập nhật embedding: {str(e)}")
