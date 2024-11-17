@@ -4,6 +4,7 @@ import com.app.webnongsan.domain.Product;
 import com.app.webnongsan.domain.response.PaginationDTO;
 import com.app.webnongsan.domain.response.product.ResProductDTO;
 import com.app.webnongsan.domain.response.product.SearchProductDTO;
+import com.app.webnongsan.service.DataExportService;
 import com.app.webnongsan.service.ProductService;
 import com.app.webnongsan.util.SecurityUtil;
 import com.app.webnongsan.util.annotation.ApiMessage;
@@ -16,24 +17,29 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.repository.query.Param;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.List;
 
 @RestController
 @RequestMapping("api/v2")
 public class ProductController {
     private final ProductService productService;
+    private final DataExportService dataExportService;
     @Value("${fastapi.similar-id-url}")
     private String similarIdUrl;
 
     @Value("${fastapi.recommend-id-url}")
     private String recommendIdUrl;
 
-    public ProductController(ProductService productService) {
+    public ProductController(ProductService productService, DataExportService dataExportService) {
         this.productService = productService;
+        this.dataExportService = dataExportService;
     }
 
     @PostMapping("products")
@@ -129,5 +135,16 @@ public class ProductController {
     public ResponseEntity<List<SearchProductDTO>> getSimilarProducts() {
         Long uid = SecurityUtil.getUserId();
         return ResponseEntity.ok(productService.getSimilarProducts(String.format(recommendIdUrl, uid)));
+    }
+
+    @GetMapping("products/exportExcel")
+    @ApiMessage("Export product data to excel")
+    public ResponseEntity<byte[]> exportProductDataToExcel() throws IOException {
+        byte[] excelData = dataExportService.exportDataToExcel();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=product_data.xlsx")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(excelData);
     }
 }

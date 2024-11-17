@@ -133,3 +133,10 @@ export const apiRecommendProductForUser = async () =>
         url: 'recommend-product',
         method: "get",
     })
+
+export const apiExportExcel = async () =>
+    axiosInstance({
+        url: `products/exportExcel`,
+        method: "get",
+        responseType: 'blob'
+    })

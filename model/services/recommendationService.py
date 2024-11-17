@@ -171,7 +171,7 @@ class RecommendationService:
                 .join(Category, Product.category_id == Category.id)
                 .all()
             )
-            print(f"Found {len(results)} results in the query.")
+            #print(f"Found {len(results)} results in the query.")
             products_data = [{
                 'id': product.id,
                 'product_name': product.product_name,
@@ -267,7 +267,7 @@ class RecommendationService:
         
         cache_data("user_vectors", user_vectors)
         cache_data("behavior_matrix", behavior_matrix)
-        print(user_vectors)
+        #print(user_vectors)
         return user_vectors, behavior_matrix
 
     @property
@@ -288,7 +288,7 @@ class RecommendationService:
     def find_similar_products(self, input_text, n=10):
         input_embeddings = self.model.encode(input_text, convert_to_tensor=False)
         similarities = cosine_similarity([input_embeddings], self.product_embeddings)[0]
-        print("Similarities: ", similarities)
+        #print("Similarities: ", similarities)
         top_n_indices = np.argsort(similarities)[::-1][:n]
         similar_product_ids = self.products_df.iloc[top_n_indices]['id'].tolist()
         return similar_product_ids

@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { apiExportExcel } from "@/apis";
+import { toast } from "react-toastify";
+import icons from "@/utils/icons";
+import "react-toastify/dist/ReactToastify.css";
 
-function SearchProduct({onSearch}) {
+const { FaFileExport } = icons
+function SearchProduct({ onSearch }) {
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -9,20 +14,37 @@ function SearchProduct({onSearch}) {
   const categorySearch = params.get("category");
   const sort = params.get("sort")
 
+  const handleExportExcel = async () => {
+    try {
+      const blob = await apiExportExcel();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'product_data.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      toast.error('Lỗi khi tải file!', { autoClose: 2000 });
+    }
+  };
+
+
   const handleKeyDown = (event) => {
     if (event.key === "Enter") {
       onSearch()
       if (searchTerm.trim() === "") {
         navigate(`/admin/product`);
         window.location.reload()
-        
+
       } else {
         navigate(
           `/admin/product?${new URLSearchParams({
             search: searchTerm.trim(),
             ...(categorySearch && { category: categorySearch }), // Include category if it exists
-            ...(sort &&{ sort: sort}),
-            page: 1 
+            ...(sort && { sort: sort }),
+            page: 1
           }).toString()}`
         );
       }
@@ -34,16 +56,26 @@ function SearchProduct({onSearch}) {
   }, [productSearch]);
 
   return (
-    <div>
-      <div></div>
-      <input
-        type="text"
-        placeholder="Tìm kiếm sản phẩm"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        onKeyDown={handleKeyDown}
-        className="w-[500px] border border-gray-300 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-green-500"
-      />
+    <div className="flex justify-between">
+      <div>
+        <input
+          type="text"
+          placeholder="Tìm kiếm sản phẩm"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onKeyDown={handleKeyDown}
+          className="w-[500px] border border-gray-300 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-green-500"
+        />
+      </div>
+
+      <button
+        className="bg-main text-white px-4 py-2 rounded-md flex items-center space-x-2"
+        onClick={handleExportExcel}
+      >
+        <FaFileExport />
+        <span>Export</span>
+      </button>
+
     </div>
   );
 }
