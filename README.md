@@ -24,8 +24,8 @@
 1. Clone repo:
 
    ```bash
-   git clone https://github.com/hungp03/grocery-store
-   cd grocery-store
+   git clone https://github.com/hungp03/grocery-store2
+   cd grocery-store2
 
    ```
 
