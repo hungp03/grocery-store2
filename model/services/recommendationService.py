@@ -13,13 +13,13 @@ from dotenv import load_dotenv
 from fastapi import HTTPException
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sentence_transformers import SentenceTransformer
 from annoy import AnnoyIndex
 
 # Local imports
-from entities.base import Product, Category
+from entities.base import Product
 from utils.redis_utils import get_cached_data, cache_data, delete_key
 
 load_dotenv()
@@ -42,14 +42,16 @@ class RecommendationService:
             
         self.engine = create_engine(DATABASE_URL)
         self.Session = sessionmaker(bind=self.engine)
+        
         # Khởi tạo scheduler
         self.scheduler = BackgroundScheduler()
         self.scheduler.start()
+        
         # Lên lịch các tác vụ làm mới dữ liệu
         self._schedule_data_refresh()
-        # Lazy loading attributes - chỉ khởi tạo khi cần
+        
+        # Lazy loading attributes
         self._model = None
-        self._products_df = None
         self._product_embeddings = None
         self._user_data = None
         self._user_vectors = None
@@ -57,10 +59,15 @@ class RecommendationService:
         self._annoy_index = None
         self._initialized = True
 
+    @property
+    def user_data(self):
+        if self._user_data is None:
+            self._user_data = self._load_user_data()
+        return self._user_data
+    
     def _schedule_data_refresh(self):
-        """Lên lịch các tác vụ làm mới dữ liệu với khoảng thời gian cụ thể."""
-        # Lên lịch refresh dữ liệu sản phẩm và embeddings mỗi 12 tiếng
-        self.scheduler.add_job(self.refresh_product_data, 'interval', hours=12, id='refresh_product_data')
+        # Lên lịch refresh embeddings sản phẩm mỗi 12 tiếng
+        self.scheduler.add_job(self.refresh_product_embeddings, 'interval', hours=12, id='refresh_product_embeddings')
         # Lên lịch refresh hành vi người dùng mỗi 3 tiếng
         self.scheduler.add_job(self.refresh_user_behavior, 'interval', hours=3, id='refresh_user_behavior')
         # Lắng nghe sự kiện thực thi các tác vụ
@@ -68,55 +75,51 @@ class RecommendationService:
 
     def _job_listener(self, event):
         if event.exception:
-            print(f"Công việc {event.job_id} bị lỗi")
+            print(f"Công việch {event.job_id} bị lỗi")
         else:
             print(f"Công việc {event.job_id} hoàn thành thành công")
 
-    def refresh_product_data(self):
-        delete_key('products')
-        print(f"Làm mới dữ liệu sản phẩm vào lúc {datetime.datetime.now()}")
-        self._products_df = self._load_products_data()
-        cache_data('products', self._products_df) 
-        # Làm mới embeddings của sản phẩm
+    def refresh_product_embeddings(self):
+        """Làm mới embedding của sản phẩm"""
+        print(f"Làm mới embedding sản phẩm vào lúc {datetime.datetime.now()}")
         delete_key("product_embeddings")
-        self._product_embeddings = self._load_embeddings()
-        cache_data('product_embeddings', self._product_embeddings)
+        
+        # Nạp và cache lại embedding
+        product_embeddings = self._load_products_embeddings()
+        cache_data('product_embeddings', product_embeddings)
 
     def refresh_user_behavior(self):
+        """Làm mới dữ liệu hành vi người dùng"""
         delete_key("user_data")
         print(f"Làm mới ma trận hành vi người dùng vào lúc {datetime.datetime.now()}")
+        
+        # Tải lại dữ liệu người dùng
         self._user_data = self._load_user_data()
         cache_data('user_data', self._user_data)
 
+        # Reset vectors và matrix
         delete_key("user_vectors")
         delete_key("behavior_matrix")
         self._user_vectors, self._behavior_matrix = self._compute_user_vectors()
+        
         # Tái cấu trúc cây annoy
         self._annoy_index = None
         self._annoy_index = self._build_annoy_index()
         print("Tái cấu trúc cây annoy")
+        
+        # Cache vectors và matrix
         cache_data("user_vectors", self._user_vectors)
         cache_data("behavior_matrix", self._behavior_matrix)
 
     @property
     def model(self):
+        """Lazy load mô hình embedding"""
         if self._model is None:
             self._model = self._load_model()
         return self._model
 
-    @property
-    def products_df(self):
-        if self._products_df is None or self._product_embeddings is None:
-            self._products_df, self._product_embeddings = self._load_products_data()
-        return self._products_df
-
-    @property
-    def product_embeddings(self):
-        if self._product_embeddings is None or self._products_df is None:
-            self._products_df, self._product_embeddings = self._load_products_data()
-        return self._product_embeddings
-
     def _load_model(self):
+        """Tải hoặc tạo mô hình embedding"""
         if os.path.exists(SENTENCE_TRANSFORMER_MODEL_FILE):
             model = joblib.load(SENTENCE_TRANSFORMER_MODEL_FILE)
         else:
@@ -124,72 +127,48 @@ class RecommendationService:
             joblib.dump(model, SENTENCE_TRANSFORMER_MODEL_FILE)
         return model
 
-    def _load_products_data(self):
-        products_df = get_cached_data('products')
-        embeddings = get_cached_data('product_embeddings')
-        if products_df is not None and embeddings is not None:
-            return products_df, embeddings
-            
-        products_df, embeddings = self._get_products_from_db()
-            
-        cache_data('products', products_df)
-        cache_data('product_embeddings', embeddings)
-        return products_df, embeddings
-    
-    @lru_cache(maxsize=1)
-    def _get_products_from_db(self):
+    def _load_products_embeddings(self):
+        """Tải embedding sản phẩm từ cơ sở dữ liệu"""
         session = self.Session()
         try:
-            results = session.query(Product, Category)\
-                            .join(Category, Product.category_id == Category.id)\
-                            .all()
-
-            products_data = []
-            embeddings = []
-
-            for product, category in results:
-                # Lưu thông tin sản phẩm (không bao gồm embedding)
-                products_data.append({
-                    'id': product.id,
-                    'product_name': product.product_name,
-                    'price': product.price,
-                    'sold': product.sold,
-                    'rating': product.rating,
-                    'category': category.name,
-                    'description': product.description
-                })
-
-                # Lưu embedding
-                if product.embedding: 
-                    embeddings.append(np.frombuffer(product.embedding, dtype=np.float32))
-
-            products_df = pd.DataFrame(products_data)
-            embeddings = np.array(embeddings)
-
+            # Truy vấn chỉ ID và embedding
+            results = session.query(Product.id, Product.embedding).all()
+            
+            product_embeddings = {}
+            for product_id, embedding in results:
+                if embedding:
+                    product_embeddings[product_id] = np.frombuffer(embedding, dtype=np.float32)
+            return product_embeddings
         finally:
             session.close()
-        return products_df, embeddings
 
     @property
-    def user_data(self):
-        if self._user_data is None:
-            self._user_data = self._load_user_data()
-        return self._user_data
+    def product_embeddings(self):
+        """Truy xuất embedding sản phẩm, ưu tiên cache"""
+        if self._product_embeddings is None:
+            cached_embeddings = get_cached_data('product_embeddings')
+            if cached_embeddings:
+                self._product_embeddings = cached_embeddings
+            else:
+                self._product_embeddings = self._load_products_embeddings()
+                cache_data('product_embeddings', self._product_embeddings)
+        return self._product_embeddings
 
     def _load_user_data(self):
-        user_data = get_cached_data('user_data')
-        if user_data is not None:
-            return user_data
-            
+        """Tải dữ liệu hành vi người dùng"""
+        cached_user_data = get_cached_data('user_data')
+        if cached_user_data is not None:
+            return cached_user_data
+        
         user_data = self._get_user_behavior_from_db()
         cache_data('user_data', user_data)
         return user_data
 
     @lru_cache(maxsize=1)
     def _get_user_behavior_from_db(self):
+        """Truy vấn hành vi người dùng từ cơ sở dữ liệu"""
         query = "CALL GetUserBehavior();"
         
-        # Sử dụng cursor để thực hiện truy vấn
         with self.engine.connect() as conn:
             cursor = conn.connection.cursor()
             cursor.execute(query)
@@ -199,8 +178,8 @@ class RecommendationService:
 
         return pd.DataFrame(result, columns=columns)
 
-        
     def update_product_embedding(self, product_id):
+        """Cập nhật embedding cho một sản phẩm"""
         session = self.Session()
         try:
             product = (
@@ -215,9 +194,11 @@ class RecommendationService:
             product_text = f"{product.product_name} {product.category.name} {product.description or ''}"
             new_embedding = self.model.encode(product_text, convert_to_tensor=False)
 
-            # Cập nhật embedding
             product.embedding = np.asarray(new_embedding, dtype=np.float32).tobytes()
             session.commit()
+            
+            # Xóa cache embedding để refresh
+            delete_key('product_embeddings')
             print(f"Đã cập nhật embedding cho sản phẩm ID {product_id}.")
         except Exception as e:
             session.rollback()
@@ -226,13 +207,18 @@ class RecommendationService:
         finally:
             session.close()
 
-
-
     def get_user_vectors(self):
+        """Lấy vector người dùng"""
         if self._user_vectors is None or self._behavior_matrix is None:
-            vectors, matrix = self._compute_user_vectors()
-            self._user_vectors = vectors
-            self._behavior_matrix = matrix
+            cached_vectors = get_cached_data("user_vectors")
+            cached_matrix = get_cached_data("behavior_matrix")
+            
+            if cached_vectors is not None and cached_matrix is not None:
+                self._user_vectors = cached_vectors
+                self._behavior_matrix = cached_matrix
+            else:
+                self._user_vectors, self._behavior_matrix = self._compute_user_vectors()
+        
         return self._user_vectors, self._behavior_matrix
 
     def _compute_user_vectors(self):
@@ -277,11 +263,13 @@ class RecommendationService:
 
     @property
     def annoy_index(self):
+        """Xây dựng và trả về Annoy Index"""
         if self._annoy_index is None:
             self._annoy_index = self._build_annoy_index()
         return self._annoy_index
 
     def _build_annoy_index(self):
+        """Xây dựng cây Annoy cho vector người dùng"""
         user_vectors, _ = self.get_user_vectors()
         vector_dim = user_vectors.shape[1]
         index = AnnoyIndex(vector_dim, 'angular')
@@ -291,8 +279,8 @@ class RecommendationService:
         return index
 
     def find_similar_products(self, input_data, n=10, input_type="text"):
+        """Tìm sản phẩm tương tự"""
         if input_type == "text":
-            # Encode text thành embedding
             input_embedding = self.model.encode(input_data, convert_to_tensor=False)
         elif input_type == "embedding":
             if not isinstance(input_data, np.ndarray):
@@ -301,58 +289,73 @@ class RecommendationService:
         else:
             raise ValueError("input_type must be 'text' or 'embedding'.")
 
-        similarities = cosine_similarity([input_embedding], self.product_embeddings)[0]
+        embeddings_list = list(self.product_embeddings.values())
+        product_ids = list(self.product_embeddings.keys())
+
+        similarities = cosine_similarity([input_embedding], embeddings_list)[0]
         top_n_indices = np.argsort(-similarities)[:n]
-        similar_product_ids = self.products_df.iloc[top_n_indices]['id'].tolist()
+        similar_product_ids = [product_ids[idx] for idx in top_n_indices]
+        
         return similar_product_ids
 
-
     def recommend_products_for_new_user(self, top_n=18):
-        # Đề xuất các sản phẩm phổ biến hoặc sản phẩm bán chạy nhất
-        popular_products = self.products_df[['id', 'rating', 'sold']].sort_values(by=['sold', 'rating'], ascending=False)
-        return popular_products['id'].head(top_n).tolist()
-
+        """Đề xuất sản phẩm cho người dùng mới"""
+        session = self.Session()
+        try:
+            popular_products = session.query(Product.id)\
+                .order_by(Product.sold.desc(), Product.rating.desc())\
+                .limit(top_n)\
+                .all()
+            return [product[0] for product in popular_products]
+        finally:
+            session.close()
 
     def recommend_products_for_user(self, user_id, top_n=18, similar_users_count=10):
-        # lấy ma trận hành vi người dùng
+        """Đề xuất sản phẩm cho người dùng"""
         user_vectors, behavior_matrix = self.get_user_vectors()
 
-        if user_id not in self._behavior_matrix.index:
-            return self.recommend_products_for_new_user(top_n)
-        
+        if user_id not in behavior_matrix.index:
+            return None
+
         user_idx = behavior_matrix.index.get_loc(user_id)
-        
-        # Lấy các người dùng tương tự từ Annoy Index
+
         similar_user_indices = self.annoy_index.get_nns_by_item(user_idx, similar_users_count + 1)[1:]
         similar_user_ids = behavior_matrix.index[similar_user_indices]
 
-        # Lấy danh sách các sản phẩm mà người dùng đã mua
+        user_vector = user_vectors[user_idx].reshape(1, -1)
+        similarities = cosine_similarity(user_vector, user_vectors[similar_user_indices])
+
+        sorted_indices = np.argsort(similarities[0])[::-1]
+        top_similar_user_ids = similar_user_ids[sorted_indices]
+
         user_purchases = set(self.user_data.loc[
             (self.user_data['user_id'] == user_id) & (self.user_data['purchase'] == 1),
             'product_id'
         ])
 
-        # Lấy danh sách các sản phẩm mà người dùng tương tự đã mua hoặc có trong wishlist
         similar_user_products = set(self.user_data.loc[
-            (self.user_data['user_id'].isin(similar_user_ids)) & 
+            (self.user_data['user_id'].isin(top_similar_user_ids)) & 
             ((self.user_data['purchase'] == 1) | (self.user_data['in_wishlist'] == 1)),
             'product_id'
         ])
 
         recommended_products = similar_user_products - user_purchases
 
-        # Khi không đủ số lượng đề xuất, bổ sung các sản phẩm bán chạy và có rating cao
         if len(recommended_products) < top_n:
-            excluded_products = recommended_products | user_purchases
-            all_products = self.products_df[~self.products_df['id'].isin(excluded_products)]
-            
-            # Chỉ sắp xếp theo rating và số lượt mua khi cần thiết
-            top_products = all_products[['id', 'rating', 'sold']].sort_values(by=['rating', 'sold'], ascending=False)
-            
-            recommended_products.update(top_products['id'].head(top_n - len(recommended_products)).tolist())
+            session = self.Session()
+            try:
+                excluded_products = recommended_products | user_purchases
+                additional_products = session.query(Product.id)\
+                    .filter(~Product.id.in_(excluded_products))\
+                    .order_by(Product.rating.desc(), Product.sold.desc())\
+                    .limit(top_n - len(recommended_products))\
+                    .all()
+                
+                recommended_products.update([product[0] for product in additional_products])
+            finally:
+                session.close()
 
         return list(recommended_products)[:top_n]
-
 
     def search_similar_products_by_keyword(self, keyword, page=1, pagesize=10, n=20):
         similar_product_ids = self.find_similar_products(keyword, n, input_type="text")
@@ -378,12 +381,8 @@ class RecommendationService:
         # Kiểm tra trong cache
         embeddings = get_cached_data('product_embeddings')
         if embeddings is not None:
-            # Lấy danh sách ID sản phẩm đã cache (nếu có)
-            products_df = get_cached_data('products')
-            if products_df is not None:
-                product_index = products_df.index[products_df['id'] == product_id].tolist()
-                if product_index:
-                    return embeddings[product_index[0]]
+            if product_id in embeddings:
+                return embeddings[product_id]
 
         # truy vấn từ db nếu không có cache
         session = self.Session()

@@ -2,6 +2,7 @@ package com.app.webnongsan.repository;
 
 import com.app.webnongsan.domain.Product;
 import com.app.webnongsan.domain.response.product.SearchProductDTO;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -27,4 +28,9 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             "WHERE p.id IN :ids")
     List<SearchProductDTO> findByIdInList(@Param("ids") List<Long> ids);
 
+    @Query("SELECT new com.app.webnongsan.domain.response.product.SearchProductDTO" +
+            "(p.id, p.productName, p.price, p.imageUrl, c.name, p.rating, p.quantity) " +
+            "FROM Product p JOIN p.category c " +
+            "ORDER BY p.sold DESC, p.rating DESC")
+    List<SearchProductDTO> findTopProductsBySoldAndRating(Pageable pageable);
 }

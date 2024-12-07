@@ -26,7 +26,7 @@ const FeatureProduct = ({ flag = 'new' }) => {
   return (
     <div className="w-main">
       <h2 className="text-[20px] uppercase font-semibold py-[10px] border-b-4 border-main">
-        {flag === "new" ? 'Sản phẩm mới': 'Dành cho bạn'}
+        {flag === "new" ? 'Sản phẩm mới': 'Có thể bạn sẽ thích'}
       </h2>
 
       <div className="grid grid-cols-6 gap-4 mt-4">

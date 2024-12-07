@@ -98,7 +98,7 @@ const Product = () => {
         message.success("Xóa sản phẩm thành công!", 2);
       }
       else {
-        message.success("Xóa sản phẩm thất bại! Có thể sản phẩm đã được mua bởi người dùng", 2);
+        message.warning("Xóa sản phẩm thất bại! Có thể sản phẩm đã được mua bởi người dùng", 2);
       }
       setShowDeleteMessage(false);
 

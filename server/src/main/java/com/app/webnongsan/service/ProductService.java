@@ -181,11 +181,12 @@ public class ProductService {
     }
 
     public List<SearchProductDTO> getSimilarProducts(String apiUrl) {
-        // Lấy danh sách các ID sản phẩm tương tự
         List<Long> ids = fetchSimilarIds(apiUrl);
-        if (ids.isEmpty()) {
-            return Collections.emptyList();
+        if (ids == null || ids.isEmpty()) {
+            Pageable pageable = PageRequest.of(0, 18);
+            return productRepository.findTopProductsBySoldAndRating(pageable);
         }
+
         List<SearchProductDTO> res = productRepository.findByIdInList(ids);
 
         Map<Long, SearchProductDTO> productMap = res.stream()
