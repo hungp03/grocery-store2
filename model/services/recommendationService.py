@@ -298,18 +298,6 @@ class RecommendationService:
         
         return similar_product_ids
 
-    def recommend_products_for_new_user(self, top_n=18):
-        """Đề xuất sản phẩm cho người dùng mới"""
-        session = self.Session()
-        try:
-            popular_products = session.query(Product.id)\
-                .order_by(Product.sold.desc(), Product.rating.desc())\
-                .limit(top_n)\
-                .all()
-            return [product[0] for product in popular_products]
-        finally:
-            session.close()
-
     def recommend_products_for_user(self, user_id, top_n=18, similar_users_count=10):
         """Đề xuất sản phẩm cho người dùng"""
         user_vectors, behavior_matrix = self.get_user_vectors()
