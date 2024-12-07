@@ -175,7 +175,7 @@ const Product = () => {
               : product_default
           }
           alt={record.product_name || "Product Image"}
-          style={{ width: "80px", height: "70px", objectFit: "cover" }}
+          style={{ width: "90px", height: "70px", objectFit: "cover" }}
         />
       ),
     },
@@ -211,7 +211,7 @@ const Product = () => {
       key: "sold",
     },
     {
-      title: "Chi tiết",
+      title: "Mô tả",
       key: "details",
       render: (_, record) => (
         <Button
@@ -220,7 +220,7 @@ const Product = () => {
             handleShowMessage(record.description, record.product_name)
           }
         >
-          Xem chi tiết
+          Xem mô tả
         </Button>
       ),
     },

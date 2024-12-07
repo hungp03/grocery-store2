@@ -6,7 +6,7 @@ import { useSelector } from 'react-redux';
 import {WishlistItem} from '@/components';
 
 const PAGE_SIZE = 5;
-const DELETE_DELAY = 750;
+const DELETE_DELAY = 500;
 
 const Wishlist = () => {
     const { current, isLoggedIn } = useSelector(state => state.user);

@@ -4,24 +4,26 @@ import { RevenueChart } from "@/components/admin";
 
 const Overview = () => {
   const currentDate = new Date();
-  const currentMonth = currentDate.getMonth() + 1;
-  const lastYear = currentDate.getFullYear() - 1;
+  const currentMonth = currentDate.getMonth() + 1; // Tháng hiện tại (1-12)
+  const currentYear = currentDate.getFullYear();
+  const lastYear = currentYear - 1;
 
-  // Thiết lập tháng mặc định là tháng trước và năm mặc định là năm hiện tại
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth > 1 ? currentMonth - 1 : 12);
-  const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear());
+  // Mặc định tháng là tháng hiện tại, năm là năm hiện tại
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [selectedYear, setSelectedYear] = useState(currentYear);
   const [totalProduct, setTotalProduct] = useState(0);
   const [totalOrder, setTotalOrder] = useState(0);
   const [totalUser, setTotalUser] = useState(0);
   const [totalProfit, setTotalProfit] = useState(0);
   const [chartData, setChartData] = useState([]);
 
+  // Danh sách các tháng (1-12)
   const months = useMemo(() => {
     const monthOptions = [];
     for (let month = 1; month <= 12; month++) {
       monthOptions.push({
         value: month,
-        label: `${String(month).padStart(2, '0')}`, // Chỉ để lại số tháng
+        label: `${String(month).padStart(2, "0")}`, // Định dạng tháng 01, 02,...
       });
     }
     return monthOptions;
@@ -53,11 +55,10 @@ const Overview = () => {
   const handleYearChange = (event) => {
     const year = parseInt(event.target.value, 10);
     setSelectedYear(year);
-    // Reset month selection if year is changed
-    if (year === currentDate.getFullYear()) {
-      setSelectedMonth(currentMonth > 1 ? currentMonth - 1 : 12);
-    } else {
-      setSelectedMonth(12); // Reset về tháng 12 cho năm trước
+
+    // Nếu đổi sang năm nay và tháng đang chọn lớn hơn tháng hiện tại, cập nhật lại tháng
+    if (year === currentYear && selectedMonth > currentMonth) {
+      setSelectedMonth(currentMonth);
     }
   };
 
@@ -88,41 +89,44 @@ const Overview = () => {
             <p className="text-2xl font-bold">{totalOrder}</p>
           </div>
         </div>
-        <div className="flex"><div className="mb-4">
-          <label htmlFor="yearSelect" className="block text-sm font-medium mb-2">
-            Chọn năm
-          </label>
-          <select
-            id="yearSelect"
-            value={selectedYear}
-            onChange={handleYearChange}
-            className="border w-[105px] rounded p-2 text-sm"
-          >
-            <option value={lastYear}>{lastYear}</option>
-            <option value={currentDate.getFullYear()}>{currentDate.getFullYear()}</option>
-          </select>
+        <div className="flex">
+          <div className="mb-4">
+            <label htmlFor="yearSelect" className="block text-sm font-medium mb-2">
+              Chọn năm
+            </label>
+            <select
+              id="yearSelect"
+              value={selectedYear}
+              onChange={handleYearChange}
+              className="border w-[105px] rounded p-2 text-sm"
+            >
+              <option value={lastYear}>{lastYear}</option>
+              <option value={currentYear}>{currentYear}</option>
+            </select>
+          </div>
+          <div className="mb-4 ml-20">
+            <label htmlFor="monthSelect" className="block text-sm font-medium mb-2">
+              Chọn tháng
+            </label>
+            <select
+              id="monthSelect"
+              value={selectedMonth}
+              onChange={handleMonthChange}
+              className="border w-[105px] rounded p-2 text-sm"
+            >
+              {months
+                .filter((month) =>
+                  // Nếu là năm nay, chỉ cho phép chọn tháng <= tháng hiện tại
+                  selectedYear === currentYear ? month.value <= currentMonth : true
+                )
+                .map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+            </select>
+          </div>
         </div>
-        <div className="mb-4 ml-20">
-          <label htmlFor="monthSelect" className="block text-sm font-medium mb-2">
-            Chọn tháng
-          </label>
-          <select
-            id="monthSelect"
-            value={selectedMonth}
-            onChange={handleMonthChange}
-            className="border w-[105px] rounded p-2 text-sm"
-          >
-            {months
-              .filter(month => 
-                (selectedYear === currentDate.getFullYear() ? month.value < currentMonth : true)
-              )
-              .map((month) => (
-                <option key={month.value} value={month.value}>
-                  {month.label}
-                </option>
-              ))}
-          </select>
-        </div></div>
         <RevenueChart data={chartData} />
       </div>
     </div>

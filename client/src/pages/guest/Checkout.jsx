@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import payment from '@/assets/payment/payment.svg';
 import { apiCreateOrder, apiDeleteCart, apiGetSelectedCart, apiPaymentVNPay, apiSendEmail, getUserById, apiUpdateProduct } from "@/apis";
-import { Button,InputForm } from "@/components";
+import { Button, InputForm } from "@/components";
 import { useForm } from "react-hook-form";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
@@ -35,7 +35,7 @@ const Checkout = () => {
             console.error("Error fetching avatar:", error);
         }
     }
-    const handlePayment = async (data,event) => {
+    const handlePayment = async (data, event) => {
         const paymentMethod = event.nativeEvent.submitter.value;
         const formData = new FormData();
         formData.append("userId", current?.id);
@@ -55,9 +55,9 @@ const Checkout = () => {
         formData.append("items", new Blob([JSON.stringify(items)], { type: "application/json" }));
         const response = await apiCreateOrder(formData);
         const delay = 2000
-        if (paymentMethod === 'VNPAY'){
-            const vnpayRes = await apiPaymentVNPay({amount:formData.get("totalPrice"),bankCode:"NCB"})
-            if(vnpayRes?.statusCode === 200 && vnpayRes?.data?.data?.code === "ok"){
+        if (paymentMethod === 'VNPAY') {
+            const vnpayRes = await apiPaymentVNPay({ amount: formData.get("totalPrice"), bankCode: "NCB" })
+            if (vnpayRes?.statusCode === 200 && vnpayRes?.data?.data?.code === "ok") {
                 const paymentUrl = vnpayRes?.data?.data?.paymentUrl;
                 // Chuyển đổi FormData thành đối tượng
                 const formObject = {};
@@ -92,25 +92,25 @@ const Checkout = () => {
                 window.location.href = paymentUrl;
                 //console.log(vnpayRes)
             }
-        }else{
+        } else {
             if (response?.statusCode === 201) {
                 toast.success(response?.data?.message, {
                     hideProgressBar: false, // Bật thanh tiến trình
                     autoClose: delay, // Tùy chọn để tự động đóng sau 3 giây (hoặc thời gian bạn muốn)
                 })
-    
+
                 // Sử dụng Promise.all để xử lý tất cả các yêu cầu song song
                 await Promise.all(cart.map(async (item) => {
                     const productData = {
-                        quantity:  item?.quantity,
+                        quantity: item?.quantity,
                     };
                     // Cập nhật lại số lượng sản phẩm sau khi thanh toán
                     await apiUpdateProduct(item?.id, productData);
-    
+
                     // Xóa sản phẩm đó khỏi cart
                     await apiDeleteCart(item?.id);
                 }));
-                
+
                 await apiSendEmail(formData);
                 location.state = {}
                 setTimeout(() => {
@@ -160,7 +160,7 @@ const Checkout = () => {
             }
             {isCart &&
                 <div className="flex w-full flex-col justify-center items-center col-span-7 gap-6">
-                    <h2 className="text-3xl mb-6 font-bold">Kiểm tra đơn hàng của bạn</h2>
+                    <h2 className="text-3xl mb-6 font-semibold">Kiểm tra đơn hàng của bạn</h2>
                     <div className="grid grid-cols-10 h-full w-full gap-6">
                         <table className="table-auto w-full h-fit col-span-6 border-collapse border border-gray-300 rounded-lg">
                             <thead>
@@ -186,10 +186,10 @@ const Checkout = () => {
                                 <FaRegCreditCard className="w-16 h-16 text-primary" />
                             </div>
                             <div className="text-2xl font-bold text-center">
-                                Tổng tiền: 
+                                Tổng tiền:
                                 <span className="text-green-500 ml-2">
-                                {new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(+cart?.reduce((sum, el) =>
-                                    +el?.price * el.quantity + sum, 0))}
+                                    {new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(+cart?.reduce((sum, el) =>
+                                        +el?.price * el.quantity + sum, 0))}
                                 </span>
                             </div>
                             <InputForm
@@ -222,9 +222,11 @@ const Checkout = () => {
                                     },
                                 }}
                             />
-                            {/* px-4 py-2 rounded-md text-white bg-main text-semibold my-2 w-full justify-end */}
-                            {<button className={ "px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-500 shadow-lg transition duration-300 w-full"} type="submit" name="paymentMethod" value="COD">Thanh toán khi nhận hàng</button>}
-                            {<button className={"px-4 py-2 rounded-md text-white bg-blue-600 hover:bg-blue-500 shadow-lg transition duration-300 w-full"} type="submit" name="paymentMethod" value="VNPAY">Thanh toán bằng VNPAY</button>}
+                      
+                                {<button className={"px-4 py-2 rounded-md text-white bg-green-600 hover:bg-green-500 shadow-lg transition duration-300 w-full"} type="submit" name="paymentMethod" value="COD">Thanh toán khi nhận hàng</button>}
+                                {<button className={"px-4 py-2 rounded-md text-white bg-blue-600 hover:bg-blue-500 shadow-lg transition duration-300 w-full"} type="submit" name="paymentMethod" value="VNPAY">Thanh toán bằng VNPAY</button>}
+                          
+
                         </form>
                     </div>
                 </div>

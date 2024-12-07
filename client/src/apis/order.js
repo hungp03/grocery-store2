@@ -1,9 +1,14 @@
 import axiosInstance from "@/utils/axios";
-export const apiGetAllOrders = async (params) =>
-    axiosInstance({
+export const apiGetAllOrders = async (params = {}) => {
+    const defaultParams = {
+        sort: "id,desc",  
+        ...params,       
+    };
+
+    return axiosInstance({
         url: "/allOrders",
         method: "get",
-        params: params,
+        params: defaultParams,
         paramsSerializer: {
             encode: (value) => value,
             serialize: (params) => {
@@ -12,7 +17,8 @@ export const apiGetAllOrders = async (params) =>
                     .join('&');
             }
         }
-    })
+    });
+};
 
 export const apiGetOrderDetail = async (oid) =>
     axiosInstance({

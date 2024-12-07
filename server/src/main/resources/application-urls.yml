@@ -90,3 +90,6 @@ security:
     - path: /api/v2/recommend-product
       methods:
         - GET
+    - path: /api/v2/payment/vn-pay
+      methods:
+        - GET

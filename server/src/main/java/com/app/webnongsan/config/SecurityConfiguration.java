@@ -69,6 +69,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/api/v2/product/ratings/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v2/files").permitAll()
                         .requestMatchers(HttpMethod.GET,"/api/v2/payment/vn-pay/**").permitAll()
+                        .requestMatchers(HttpMethod.GET,"/api/v2/payment/vn-pay").permitAll()
                         .requestMatchers(HttpMethod.GET,"/api/v2/payment/vn-pay-callback").permitAll()
                         .requestMatchers("/favicon.ico").permitAll()
                         // filter role with spring security

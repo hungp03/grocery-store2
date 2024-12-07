@@ -1,9 +1,8 @@
-/* eslint-disable deprecation/deprecation */
+
 import React, { useState, useEffect } from "react";
 import { apiGetAllOrders, apiUpdateOrderStatus } from "@/apis";
 import { FaInfoCircle } from "react-icons/fa";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { toast } from "react-toastify";
 import { Table, Button, Dropdown, message, Select } from "antd";
 import { createSearchParams } from "react-router-dom";
 import { statusOrder } from "@/utils/constants";
@@ -144,7 +143,7 @@ const Order = () => {
 
   const columns = [
     {
-      title: 'Id',
+      title: 'Mã đơn',
       dataIndex: 'id',
       key: 'id',
     },

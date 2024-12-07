@@ -8,7 +8,7 @@ import { getCurrentUser } from '@/store/user/asyncActions';
 import withBaseComponent from '@/hocs/withBaseComponent';
 import path from '@/utils/path';
 
-const DEBOUNCE_DELAY = 1500;
+const DEBOUNCE_DELAY = 500;
 const DELETE_DELAY = 500;
 const ITEMS_PER_PAGE = 10;
 
