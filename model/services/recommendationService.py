@@ -32,38 +32,6 @@ DB_database=os.getenv("DB_database")
 
 SENTENCE_TRANSFORMER_MODEL_FILE = 'sentence_transformer_model.pkl'
 
-from nltk.tokenize import word_tokenize
-import nltk
-nltk.download('punkt')
-nltk.download('punkt_tab')
-STOPWORDS_VIETNAMESE = set([
-    "cái", "đây", "là", "và", "có", "cũng", "trong", "của", "một", "này", "khi", "được",
-    "với", "như", "bởi", "không", "là", "nếu", "vì", "sẽ", "cũng", "mà", "hơn", "các", "từ",
-    "nói", "về", "mới", "tại", "của", "đến", "thì", "mà", "cho", "bằng", "và", "lại", "những",
-    "vậy", "vẫn", "đang", "ai", "khi", "đó", "sẽ", "có", "chỉ", "các", "với", "mà", "hay", "trong",
-    "nếu", "nào", "nhiều", "thế", "sẽ", "bởi", "về", "được", "mình", "rồi", "nữa", "là", "thấy",
-    "ra", "thì", "mỗi", "vì", "sao", "tất", "thế", "nơi", "giữa", "sau", "khi", "tất cả", "đó",
-    "cũng", "bởi", "một", "thế", "cả", "vào", "sử dụng", "có", "đi", "được", "nhưng", "lại", "làm",
-    "vào", "khiến", "đến", "nó", "lớn", "tính", "trong", "không", "đưa", "vào", "trải", "cùng",
-    "bất", "sẽ", "giống", "trải", "hơn", "mới", "chỉ", "thực", "đã", "ngày", "với", "lại", "điều",
-    "đều", "cho", "chưa", "tại", "người", "tôi", "của", "thực", "trong", "thấy", "được", "cũng",
-    "rất", "mà", "là", "sự", "nếu", "nào", "để", "thực", "chỉ", "người", "bởi", "vì", "sự",
-    "hầu", "nói", "mình", "chưa", "rất", "với", "tất", "bạn", "gì", "cái", "các", "sao", "trực",
-    "người", "theo", "có", "vậy", "thể", "sẽ", "dùng", "có thể", "và", "chẳng", "như", "làm",
-    "vào", "hơn", "bằng", "chúng", "cái", "về", "sau", "lấy", "không", "từ", "mới", "chỉ", "được",
-    "sẽ", "ngay", "về", "và", "từ", "nào", "nhưng", "của", "một", "với", "thế", "trong", "có",
-    "thực", "hơn", "cần", "tìm", "để", "đi", "khi", "tương", "đặc", "nghĩa", "tăng", "thực",
-    "bằng", "thế", "nghe", "bởi", "này", "không", "thành", "mà", "chúng", "giữa", "có", "sử",
-    "người", "đó", "những", "cần", "gì", "làm", "sẽ", "vào", "vậy", "nếu", "vì", "rồi", "vào",
-    "cũng", "từ", "sao", "khi", "rất", "mà", "nên", "tự", "khá", "được", "và", "ngày", "hoặc",
-    "chứ", "để", "mà", "chúng", "thêm", "cũng", "sao", "gì", "tất", "không", "nói", "bạn"
-])
-
-def remove_stopwords(text):
-    words = word_tokenize(text)
-    filtered_words = [word for word in words if word.lower() not in STOPWORDS_VIETNAMESE]
-    return ' '.join(filtered_words)
-
 class RecommendationService:
     _instance = None
 
@@ -193,7 +161,6 @@ class RecommendationService:
 
     def _get_user_behavior_from_db(self):
         try:
-            # Tạo kết nối trực tiếp
             connection = mysql.connector.connect(
                 host=DB_host,
                 user=DB_user,
@@ -203,15 +170,11 @@ class RecommendationService:
             
             cursor = connection.cursor(dictionary=True)
             
-            # Gọi stored procedure
             cursor.callproc('GetUserBehavior')
-            
-            # Lấy tất cả các kết quả
             results = []
             for result in cursor.stored_results():
                 results.append(result.fetchall())
             
-            # Chuyển sang DataFrame nếu cần
             df = pd.DataFrame(results[0]) if results else pd.DataFrame()
             
             # Đóng cursor và connection
@@ -362,3 +325,31 @@ class RecommendationService:
             raise HTTPException(status_code=404, detail="Không tìm thấy sản phẩm tương tự")
 
         return similar_product_ids[:n]
+    
+    def update_product_embedding(self, product_id):
+        session = self.Session()
+        try:
+            product = (
+                session.query(Product)
+                .filter(Product.id == product_id)
+                .first()
+            )
+
+            if not product:
+                raise ValueError(f"Sản phẩm với ID {product_id} không tồn tại.")
+
+            product_text = f"{product.product_name} {product.category.name} {product.description or ''}"
+            new_embedding = self.model.encode(product_text, convert_to_tensor=False)
+
+            product.embedding = np.asarray(new_embedding, dtype=np.float32).tobytes()
+            session.commit()
+            
+            # Xóa cache embedding để refresh
+            delete_key('product_embeddings')
+            print(f"Đã cập nhật embedding cho sản phẩm ID {product_id}.")
+        except Exception as e:
+            session.rollback()
+            print(f"Lỗi khi cập nhật embedding cho sản phẩm ID {product_id}: {e}")
+            raise
+        finally:
+            session.close()
