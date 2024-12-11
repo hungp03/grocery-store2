@@ -213,7 +213,7 @@ class RecommendationService:
             user_vectors, behavior_matrix = self._compute_user_vectors()
         return user_vectors, behavior_matrix
 
-    def recommend_products_for_user(self, user_id, top_n=18, similar_users_count=10):
+    def recommend_products_for_user(self, user_id, top_n=18, similar_users_count=5):
         user_vectors, behavior_matrix = self.get_user_vectors()
         if user_id not in behavior_matrix.index:
             return None

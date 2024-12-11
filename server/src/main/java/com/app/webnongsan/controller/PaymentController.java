@@ -26,11 +26,11 @@ public class PaymentController {
     public ResponseEntity<?> payCallbackHandler(HttpServletRequest request) {
         String status = request.getParameter("vnp_ResponseCode");
         if (status.equals("00")) {
-            return ResponseEntity.status(HttpStatus.FOUND).header("Location", "http://localhost:5173/payment-success") // URL của trang thành công trên client
+            return ResponseEntity.status(HttpStatus.FOUND).header("Location", "http://localhost:4173/payment-success") // URL của trang thành công trên client
                     .build();
         } else {
             return ResponseEntity.status(HttpStatus.FOUND)
-                    .header("Location", "http://localhost:5173/payment-failure") // URL của trang thất bại trên client
+                    .header("Location", "http://localhost:4173/payment-failure") // URL của trang thất bại trên client
                     .build();
         }
     }

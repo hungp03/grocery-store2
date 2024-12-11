@@ -143,7 +143,7 @@ const Personal = () => {
                 </div>
                 <div className="flex items-center gap-2">
                     <span>Vai trò: </span>
-                    <span>{current?.role === 1 ? "Admin" : "User"}</span>
+                    <span>{current?.role?.id === 1 ? "Admin" : "User"}</span>
                 </div>
 
                 <div className="flex flex-col gap-2">

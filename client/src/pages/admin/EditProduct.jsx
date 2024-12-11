@@ -85,7 +85,7 @@ function EditProduct() {
       
       <div className="fixed bottom-16 right-16">
         <button className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-full" onClick={handleShowAddProduct}>
-          + Thêm sản phẩm
+          + Thêm số lượng sản phẩm
         </button>
       </div>
 

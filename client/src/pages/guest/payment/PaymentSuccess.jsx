@@ -56,7 +56,7 @@ const PaymentSuccess = () => {
                 formData.append("address", paymentInfo?.address);
                 formData.append("totalPrice", paymentInfo?.totalPrice);
                 formData.append("paymentMethod", paymentInfo?.paymentMethod);
-
+                formData.append("phone", paymentInfo?.phone);
                 // Thêm từng sản phẩm trong giỏ hàng vào formData
                 const items = cart?.map((item) => ({
                     productId: item?.productId,
